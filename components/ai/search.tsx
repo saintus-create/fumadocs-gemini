@@ -11,7 +11,8 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Loader2, MessageCircleIcon, RefreshCw, SearchIcon, Send, X } from 'lucide-react';
+import { MessageCircleIcon, Mic, RefreshCw, SearchIcon, Send, X } from 'lucide-react';
+import { Button, Card, Spinner } from '@heroui/react';
 import { cn } from '../../lib/cn';
 import { buttonVariants } from '../ui/button';
 import { useChat, type UseChatHelpers } from '@ai-sdk/react';
@@ -19,15 +20,32 @@ import { DefaultChatTransport, type Tool, type UIToolInvocation } from 'ai';
 import { Markdown } from '../markdown';
 import { Presence } from '@radix-ui/react-presence';
 import type { ChatUIMessage, SearchTool } from '../../app/api/chat/route';
+import Vapi from '@vapi-ai/web';
+import { Matrix, loader, pulse, type Frame } from '../ui/matrix';
 
 const Context = createContext<{
   open: boolean;
   setOpen: (open: boolean) => void;
   chat: UseChatHelpers<ChatUIMessage>;
+  voiceActive: boolean;
+  voiceConnecting: boolean;
+  voiceState: 'idle' | 'connecting' | 'listening' | 'speaking' | 'thinking';
+  toggleVoice: () => void;
 } | null>(null);
 
+type AISearchProps = {
+  children: ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+};
+
+type AISearchDialogProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+};
+
 export function AISearchPanelHeader({ className, ...props }: ComponentProps<'div'>) {
-  const { setOpen } = useAISearchContext();
+  const { setOpen, voiceActive, voiceState } = useAISearchContext();
 
   return (
     <div
@@ -40,24 +58,30 @@ export function AISearchPanelHeader({ className, ...props }: ComponentProps<'div
       <div className="px-3 py-2 flex-1">
         <p className="text-sm font-medium mb-2">AI Chat</p>
         <p className="text-xs text-fd-muted-foreground">
-          AI can be inaccurate, please verify the answers.
+          {voiceActive
+            ? voiceState === 'speaking'
+              ? 'Agent is speaking...'
+              : voiceState === 'thinking'
+                ? 'Agent is thinking...'
+                : voiceState === 'listening'
+                  ? 'Listening...'
+                  : voiceState === 'connecting'
+                    ? 'Connecting voice...'
+                    : 'Voice active'
+            : 'AI can be inaccurate, please verify the answers.'}
         </p>
       </div>
 
-      <button
+      <Button
         aria-label="Close"
-        tabIndex={-1}
-        className={cn(
-          buttonVariants({
-            size: 'icon-sm',
-            color: 'ghost',
-            className: 'text-fd-muted-foreground rounded-full',
-          }),
-        )}
-        onClick={() => setOpen(false)}
+        isIconOnly
+        size="sm"
+        variant="ghost"
+        className="mt-2 me-2 rounded-full text-fd-muted-foreground"
+        onPress={() => setOpen(false)}
       >
-        <X />
-      </button>
+        <X className="size-4" />
+      </Button>
     </div>
   );
 }
@@ -71,41 +95,54 @@ export function AISearchInputActions() {
   return (
     <>
       {!isLoading && messages.at(-1)?.role === 'assistant' && (
-        <button
+        <Button
           type="button"
-          className={cn(
-            buttonVariants({
-              color: 'secondary',
-              size: 'sm',
-              className: 'rounded-full gap-1.5',
-            }),
-          )}
-          onClick={() => regenerate()}
+          size="sm"
+          variant="secondary"
+          className="rounded-full"
+          onPress={() => regenerate()}
         >
           <RefreshCw className="size-4" />
           Retry
-        </button>
+        </Button>
       )}
-      <button
+      <Button
         type="button"
-        className={cn(
-          buttonVariants({
-            color: 'secondary',
-            size: 'sm',
-            className: 'rounded-full',
-          }),
-        )}
-        onClick={() => setMessages([])}
+        size="sm"
+        variant="secondary"
+        className="rounded-full"
+        onPress={() => setMessages([])}
       >
         Clear Chat
-      </button>
+      </Button>
     </>
   );
 }
 
 const StorageKeyInput = '__ai_search_input';
+
+function createUserMessage(text: string): ChatUIMessage {
+  return {
+    id: `voice-${crypto.randomUUID()}`,
+    role: 'user',
+    parts: [
+      {
+        type: 'data-client',
+        data: {
+          location: typeof window !== 'undefined' ? window.location.href : '',
+        },
+      },
+      {
+        type: 'text',
+        text,
+      },
+    ],
+  };
+}
+
 export function AISearchInput(props: ComponentProps<'form'>) {
   const { status, sendMessage, stop } = useChatContext();
+  const { voiceActive, voiceConnecting, voiceState, toggleVoice } = useAISearchContext();
   const [input, setInput] = useState(() =>
     typeof window !== 'undefined' ? localStorage.getItem(StorageKeyInput) ?? '' : '',
   );
@@ -115,21 +152,7 @@ export function AISearchInput(props: ComponentProps<'form'>) {
     const message = input.trim();
     if (message.length === 0) return;
 
-    void sendMessage({
-      role: 'user',
-      parts: [
-          {
-            type: 'data-client',
-            data: {
-              location: typeof window !== 'undefined' ? window.location.href : '',
-            },
-          },
-        {
-          type: 'text',
-          text: message,
-        },
-      ],
-    });
+    void sendMessage(createUserMessage(message));
     setInput('');
     localStorage.removeItem(StorageKeyInput);
   };
@@ -138,11 +161,29 @@ export function AISearchInput(props: ComponentProps<'form'>) {
     if (isLoading) document.getElementById('nd-ai-input')?.focus();
   }, [isLoading]);
 
+  const voiceMatrix = getVoiceMatrixConfig(voiceState);
+
   return (
-    <form {...props} className={cn('flex items-start pe-2', props.className)} onSubmit={onStart}>
+    <form {...props} className={cn('flex items-start gap-2 px-2 pb-2', props.className)} onSubmit={onStart}>
+      {voiceActive && (
+        <div className="flex items-center ps-1 pt-2">
+          <Matrix
+            rows={voiceMatrix.pattern ? voiceMatrix.pattern.length : 7}
+            cols={voiceMatrix.pattern ? voiceMatrix.pattern[0].length : 7}
+            frames={voiceMatrix.frames}
+            pattern={voiceMatrix.pattern}
+            fps={voiceMatrix.fps}
+            size={6}
+            gap={1.5}
+            palette={voiceMatrix.palette}
+            loop
+            ariaLabel="Voice active"
+          />
+        </div>
+      )}
       <Input
         value={input}
-        placeholder={isLoading ? 'AI is answering...' : 'Ask a question'}
+        placeholder={isLoading ? 'AI is answering...' : voiceActive ? 'Voice active — speak or type' : 'Ask a question'}
         autoFocus
         className="p-3"
         disabled={status === 'streaming' || status === 'submitted'}
@@ -156,38 +197,86 @@ export function AISearchInput(props: ComponentProps<'form'>) {
           }
         }}
       />
+      <Button
+        type="button"
+        aria-label={voiceActive ? 'Stop voice' : 'Start voice'}
+        isIconOnly
+        variant={voiceActive ? 'secondary' : 'ghost'}
+        className={cn('mt-2 rounded-full transition-all', voiceActive && 'ring-2 ring-fd-primary/30')}
+        onPress={toggleVoice}
+        isDisabled={voiceConnecting}
+      >
+        {voiceConnecting ? (
+          <Spinner size="sm" />
+        ) : voiceActive ? (
+          <Matrix
+            rows={voiceMatrix.pattern ? voiceMatrix.pattern.length : 7}
+            cols={voiceMatrix.pattern ? voiceMatrix.pattern[0].length : 7}
+            frames={voiceMatrix.frames}
+            pattern={voiceMatrix.pattern}
+            fps={voiceMatrix.fps}
+            size={4}
+            gap={1}
+            palette={voiceMatrix.palette}
+            loop
+            className="size-4"
+          />
+        ) : (
+          <Mic className="size-4" />
+        )}
+      </Button>
       {isLoading ? (
-        <button
+        <Button
           key="bn"
           type="button"
-          className={cn(
-            buttonVariants({
-              color: 'secondary',
-              className: 'transition-all rounded-full mt-2 gap-2',
-            }),
-          )}
-          onClick={stop}
+          variant="secondary"
+          className="mt-2 rounded-full"
+          onPress={stop}
         >
-          <Loader2 className="size-4 animate-spin text-fd-muted-foreground" />
+          <Spinner size="sm" />
           Abort Answer
-        </button>
+        </Button>
       ) : (
-        <button
+        <Button
           key="bn"
           type="submit"
-          className={cn(
-            buttonVariants({
-              color: 'primary',
-              className: 'transition-all rounded-full mt-2',
-            }),
-          )}
-          disabled={input.length === 0}
+          isIconOnly
+          variant="primary"
+          className="mt-2 rounded-full"
+          isDisabled={input.length === 0}
         >
           <Send className="size-4" />
-        </button>
+        </Button>
       )}
     </form>
   );
+}
+
+function getVoiceMatrixConfig(state: 'idle' | 'connecting' | 'listening' | 'speaking' | 'thinking'): { frames?: Frame[]; pattern?: Frame; fps: number; palette: { on: string; off: string } } {
+  switch (state) {
+    case 'connecting':
+      return { frames: loader, fps: 12, palette: { on: '#ffffff', off: 'rgba(255,255,255,0.08)' } };
+    case 'speaking':
+      return { frames: pulse, fps: 16, palette: { on: '#ffffff', off: 'rgba(255,255,255,0.06)' } };
+    case 'thinking':
+      return { frames: loader, fps: 10, palette: { on: '#ffffff', off: 'rgba(255,255,255,0.06)' } };
+    case 'listening':
+      return { frames: pulse, fps: 8, palette: { on: '#ffffff', off: 'rgba(255,255,255,0.08)' } };
+    default:
+      return {
+        pattern: [
+          [0, 0, 1, 0, 0],
+          [0, 1, 1, 1, 0],
+          [1, 1, 1, 1, 1],
+          [0, 0, 1, 0, 0],
+          [0, 0, 1, 0, 0],
+          [0, 1, 0, 1, 0],
+          [1, 0, 0, 0, 1],
+        ],
+        fps: 1,
+        palette: { on: '#ffffff', off: 'rgba(255,255,255,0.08)' },
+      };
+  }
 }
 
 function List(props: Omit<ComponentProps<'div'>, 'dir'>) {
@@ -308,8 +397,27 @@ function Message({ message, ...props }: { message: ChatUIMessage } & ComponentPr
   );
 }
 
-export function AISearch({ children }: { children: ReactNode }) {
-  const [open, setOpen] = useState(false);
+export function AISearch({ children, open: controlledOpen, onOpenChange }: AISearchProps) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const [voiceActive, setVoiceActive] = useState(false);
+  const [voiceConnecting, setVoiceConnecting] = useState(false);
+  const [voiceState, setVoiceState] = useState<'idle' | 'connecting' | 'listening' | 'speaking' | 'thinking'>('idle');
+  const vapiRef = useRef<Vapi | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const lastVoiceTranscriptRef = useRef<string>('');
+  const lastSpokenAssistantMessageRef = useRef<string>('');
+  const open = controlledOpen ?? internalOpen;
+
+  const setOpen = useCallback(
+    (nextOpen: boolean) => {
+      if (controlledOpen === undefined) {
+        setInternalOpen(nextOpen);
+      }
+      onOpenChange?.(nextOpen);
+    },
+    [controlledOpen, onOpenChange],
+  );
+
   const chat = useChat<ChatUIMessage>({
     id: 'search',
     transport: new DefaultChatTransport({
@@ -317,8 +425,122 @@ export function AISearch({ children }: { children: ReactNode }) {
     }),
   });
 
+  useEffect(() => {
+    if (!voiceActive) return;
+
+    if (chat.status === 'submitted' || chat.status === 'streaming') {
+      setVoiceState((current) => (current === 'speaking' ? current : 'thinking'));
+      return;
+    }
+
+    const lastAssistantMessage = [...chat.messages].reverse().find((message) => message.role === 'assistant');
+    if (!lastAssistantMessage) {
+      return;
+    }
+
+    const text = lastAssistantMessage.parts
+      ?.filter((part): part is Extract<(typeof lastAssistantMessage.parts)[number], { type: 'text' }> => part.type === 'text')
+      .map((part) => part.text)
+      .join('\n')
+      .trim();
+
+    if (!text || text === lastSpokenAssistantMessageRef.current) {
+      return;
+    }
+
+    lastSpokenAssistantMessageRef.current = text;
+    setVoiceState('speaking');
+    vapiRef.current?.say(text, false, true, true);
+  }, [chat.messages, chat.status, voiceActive]);
+
+  useEffect(() => {
+    const publicKey = process.env.NEXT_PUBLIC_VAPI_PUBLIC_KEY;
+    const assistantId = process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID;
+    if (!publicKey || !assistantId) return;
+
+    const vapi = new Vapi(publicKey);
+    vapiRef.current = vapi;
+
+    vapi.on('call-start', () => {
+      setVoiceActive(true);
+      setVoiceConnecting(false);
+      setVoiceState('listening');
+      lastVoiceTranscriptRef.current = '';
+      lastSpokenAssistantMessageRef.current = '';
+      vapi.send({
+        type: 'control',
+        control: 'mute-assistant',
+      });
+    });
+
+    vapi.on('call-end', () => {
+      setVoiceActive(false);
+      setVoiceConnecting(false);
+      setVoiceState('idle');
+      mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+      mediaStreamRef.current = null;
+    });
+
+    vapi.on('speech-start', () => setVoiceState('speaking'));
+    vapi.on('speech-end', () => {
+      setVoiceState(chat.status === 'submitted' || chat.status === 'streaming' ? 'thinking' : 'listening');
+    });
+
+    vapi.on('message', (msg: any) => {
+      if (msg?.type === 'transcript' && msg?.role === 'user' && msg?.transcriptType === 'final') {
+        const transcript = typeof msg?.transcript === 'string' ? msg.transcript.trim() : '';
+        if (!transcript || transcript === lastVoiceTranscriptRef.current) {
+          return;
+        }
+
+        lastVoiceTranscriptRef.current = transcript;
+        lastSpokenAssistantMessageRef.current = '';
+        setVoiceState('thinking');
+        void chat.sendMessage(createUserMessage(transcript));
+      }
+    });
+
+    vapi.on('error', () => {
+      setVoiceConnecting(false);
+      setVoiceState('idle');
+    });
+
+    return () => {
+      vapi.removeAllListeners();
+      vapi.stop();
+    };
+  }, [chat, chat.status]);
+
+  const toggleVoice = useCallback(async () => {
+    if (voiceActive) {
+      vapiRef.current?.stop();
+    } else {
+      try {
+        setVoiceConnecting(true);
+        setVoiceState('connecting');
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaStreamRef.current = stream;
+        const assistantId = process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID!;
+        await vapiRef.current?.start(assistantId);
+      } catch {
+        setVoiceConnecting(false);
+        setVoiceState('idle');
+        mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+        mediaStreamRef.current = null;
+      }
+    }
+  }, [voiceActive]);
+
   return (
-    <Context value={useMemo(() => ({ chat, open, setOpen }), [chat, open])}>{children}</Context>
+    <Context value={useMemo(() => ({ chat, open, setOpen, voiceActive, voiceConnecting, voiceState, toggleVoice }), [chat, open, voiceActive, voiceConnecting, voiceState, toggleVoice])}>{children}</Context>
+  );
+}
+
+export function AISearchDialog(props: AISearchDialogProps) {
+  return (
+    <AISearch open={props.open} onOpenChange={props.onOpenChange}>
+      <AISearchPanel />
+    </AISearch>
   );
 }
 
@@ -393,12 +615,12 @@ export function AISearchPanel() {
           <div className="flex flex-col size-full p-2 lg:p-3 lg:w-(--ai-chat-width)">
             <AISearchPanelHeader />
             <AISearchPanelList className="flex-1" />
-            <div className="rounded-xl border bg-fd-secondary text-fd-secondary-foreground shadow-sm has-focus-visible:shadow-md">
+            <Card variant="secondary" className="has-focus-visible:shadow-md">
               <AISearchInput />
-              <div className="flex items-center gap-1.5 p-1 empty:hidden">
+              <div className="flex items-center gap-1.5 px-2 pb-2 empty:hidden">
                 <AISearchInputActions />
               </div>
-            </div>
+            </Card>
           </div>
         </div>
       </Presence>

@@ -3,6 +3,12 @@
 This is a Next.js application generated with
 [Create Fumadocs](https://github.com/fuma-nama/fumadocs).
 
+## Requirements
+
+- Node.js `22.18.0` or newer
+
+This repo includes both `.nvmrc` and `.node-version` so local tools can pick the correct runtime automatically.
+
 Run development server:
 
 ```bash
