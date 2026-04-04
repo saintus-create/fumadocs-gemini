@@ -12,9 +12,14 @@ import { getMDXComponents } from '@/components/mdx';
 import type { Metadata } from 'next';
 import { createRelativeLink } from 'fumadocs-ui/mdx';
 import { gitConfig } from '@/lib/shared';
+import { DocsChatPage } from '@/components/docs/docs-chat-page';
 
 export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
   const params = await props.params;
+  if (!params.slug || params.slug.length === 0) {
+    return <DocsChatPage />;
+  }
+
   const page = source.getPage(params.slug);
   if (!page) notFound();
 
@@ -50,6 +55,13 @@ export async function generateStaticParams() {
 
 export async function generateMetadata(props: PageProps<'/docs/[[...slug]]'>): Promise<Metadata> {
   const params = await props.params;
+  if (!params.slug || params.slug.length === 0) {
+    return {
+      title: 'Docs Assistant',
+      description: 'Ask questions about the docs in a chat-first interface.',
+    };
+  }
+
   const page = source.getPage(params.slug);
   if (!page) notFound();
 

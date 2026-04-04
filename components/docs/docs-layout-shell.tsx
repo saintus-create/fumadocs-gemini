@@ -7,9 +7,9 @@ import {
   SidebarTrigger,
   useSidebar,
 } from 'fumadocs-ui/layouts/docs/slots/sidebar';
+import { ExpandedSidebarProvider } from '@/components/docs/expanded-sidebar-provider';
 import { source } from '@/lib/source';
 import { baseOptions } from '@/lib/layout.shared';
-import { CollapsedSidebarProvider } from '@/components/docs/collapsed-sidebar-provider';
 
 export function DocsLayoutShell({ children }: { children: ReactNode }) {
   return (
@@ -18,7 +18,7 @@ export function DocsLayoutShell({ children }: { children: ReactNode }) {
       {...baseOptions()}
       slots={{
         sidebar: {
-          provider: CollapsedSidebarProvider,
+          provider: ExpandedSidebarProvider,
           root: Sidebar,
           trigger: SidebarTrigger,
           useSidebar,
