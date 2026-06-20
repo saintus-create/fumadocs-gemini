@@ -9,7 +9,7 @@ import {
 import Link from 'fumadocs-core/link';
 import Image from 'next/image';
 import Preview from '@/public/banner.png';
-import { Book, ComponentIcon, Pencil, PlusIcon, Server } from 'lucide-react';
+import { Book, ComponentIcon, Pencil, PlusIcon, Server, Library } from 'lucide-react';
 
 export default function Layout({ children }: LayoutProps<'/'>) {
   return (
@@ -21,6 +21,11 @@ export default function Layout({ children }: LayoutProps<'/'>) {
           on: 'menu',
           text: 'Documentation',
           items: [
+            {
+              text: 'Encyclopedia of Rhetoric',
+              url: '/docs/rhetoric',
+              icon: <Library />,
+            },
             {
               text: 'Getting Started',
               url: '/docs',
@@ -42,7 +47,7 @@ export default function Layout({ children }: LayoutProps<'/'>) {
                 <Link href="/docs">Documentation</Link>
               </NavbarMenuTrigger>
               <NavbarMenuContent>
-                <NavbarMenuLink href="/docs" className="md:row-span-2">
+                <NavbarMenuLink href="/docs/rhetoric" className="md:row-span-2">
                   <div className="-mx-3 -mt-3">
                     <Image
                       src={Preview}
@@ -53,6 +58,14 @@ export default function Layout({ children }: LayoutProps<'/'>) {
                       }}
                     />
                   </div>
+                  <p className="font-medium">Encyclopedia of Rhetoric</p>
+                  <p className="text-fd-muted-foreground text-sm">
+                    Comprehensive reference for rhetorical terms and concepts.
+                  </p>
+                </NavbarMenuLink>
+
+                <NavbarMenuLink href="/docs" className="lg:col-start-2">
+                  <Book className="bg-fd-primary text-fd-primary-foreground p-1 mb-2 rounded-md" />
                   <p className="font-medium">Getting Started</p>
                   <p className="text-fd-muted-foreground text-sm">
                     Learn to use Fumadocs on your docs site.
@@ -67,7 +80,7 @@ export default function Layout({ children }: LayoutProps<'/'>) {
                   </p>
                 </NavbarMenuLink>
 
-                <NavbarMenuLink href="/docs/openapi" className="lg:col-start-2">
+                <NavbarMenuLink href="/docs/openapi" className="lg:col-start-3 lg:row-start-1">
                   <Server className="bg-fd-primary text-fd-primary-foreground p-1 mb-2 rounded-md" />
                   <p className="font-medium">OpenAPI</p>
                   <p className="text-fd-muted-foreground text-sm">
@@ -75,22 +88,11 @@ export default function Layout({ children }: LayoutProps<'/'>) {
                   </p>
                 </NavbarMenuLink>
 
-                <NavbarMenuLink href="/docs/markdown" className="lg:col-start-3 lg:row-start-1">
+                <NavbarMenuLink href="/docs/markdown" className="lg:col-start-3 lg:row-start-2">
                   <Pencil className="bg-fd-primary text-fd-primary-foreground p-1 mb-2 rounded-md" />
                   <p className="font-medium">Markdown</p>
                   <p className="text-fd-muted-foreground text-sm">
                     Learn the writing format/syntax of Fumadocs.
-                  </p>
-                </NavbarMenuLink>
-
-                <NavbarMenuLink
-                  href="/docs/manual-installation"
-                  className="lg:col-start-3 lg:row-start-2"
-                >
-                  <PlusIcon className="bg-fd-primary text-fd-primary-foreground p-1 mb-2 rounded-md" />
-                  <p className="font-medium">Manual Installation</p>
-                  <p className="text-fd-muted-foreground text-sm">
-                    Setup Fumadocs for your existing React.js app.
                   </p>
                 </NavbarMenuLink>
               </NavbarMenuContent>
